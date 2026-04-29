@@ -3,9 +3,11 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, PatientInfo } from "./types";
 
 export async function analyzeMedicalFile(
-  file: File,
-  base64Data: string,
-  patientInfo: PatientInfo
+  scanFile: File,
+  scanBase64: string,
+  patientInfo: PatientInfo,
+  reportFile?: File,
+  reportBase64?: string
 ): Promise<AnalysisResult> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
@@ -194,17 +196,25 @@ CRITICAL SAFETY RULES:
 Now analyze the image and generate the report.
   `;
 
-  const contents = [
+  const contents: any[] = [
     {
       inlineData: {
-        mimeType: file.type,
-        data: base64Data,
+        mimeType: scanFile.type,
+        data: scanBase64,
       }
-    },
-    {
-      text: analysisPrompt
     }
   ];
+
+  if (reportFile && reportBase64) {
+    contents.push({
+      inlineData: {
+        mimeType: reportFile.type,
+        data: reportBase64,
+      }
+    });
+  }
+
+  contents.push({ text: analysisPrompt });
 
   try {
     const response = await ai.models.generateContent({

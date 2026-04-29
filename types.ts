@@ -65,6 +65,8 @@ export interface MedicalReport {
   timestamp: number;
   fileName: string;
   fileType: string;
+  reportFileName?: string;
+  reportFileType?: string;
   patientInfo: PatientInfo;
   analysis: AnalysisResult;
 }

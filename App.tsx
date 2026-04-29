@@ -72,30 +72,31 @@ export default function App() {
     }
   }, [currentUser, currentPage]);
 
-  const onFileUpload = async (file: File, patientInfo: PatientInfo) => {
+  const onFileUpload = async (scanFile: File, patientInfo: PatientInfo, reportFile?: File) => {
     if (!currentUser) return;
     setIsLoading(true);
     setError(null);
 
     try {
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve) => {
-        reader.onload = () => {
-          const res = reader.result as string;
-          resolve(res.split(',')[1]);
-        };
+      const readFile = (file: File) => new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(',')[1]);
         reader.readAsDataURL(file);
       });
 
-      const base64 = await base64Promise;
-      const result = await analyzeMedicalFile(file, base64, patientInfo);
+      const scanBase64 = await readFile(scanFile);
+      const reportBase64 = reportFile ? await readFile(reportFile) : undefined;
+
+      const result = await analyzeMedicalFile(scanFile, scanBase64, patientInfo, reportFile, reportBase64);
       
       const newReport: MedicalReport = {
         id: Math.random().toString(36).substr(2, 9),
         userId: currentUser,
         timestamp: Date.now(),
-        fileName: file.name,
-        fileType: file.type,
+        fileName: scanFile.name,
+        fileType: scanFile.type,
+        reportFileName: reportFile?.name,
+        reportFileType: reportFile?.type,
         patientInfo: patientInfo,
         analysis: result
       };
@@ -267,9 +268,10 @@ const DashboardView: React.FC<{ onUpload: () => void; onViewHistory: () => void;
   );
 };
 
-const UploadView: React.FC<{ onBack: () => void; onSubmit: (file: File, info: PatientInfo) => void; isLoading: boolean; error: string | null }> = ({ onBack, onSubmit, isLoading, error }) => {
-  const [dragActive, setDragActive] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+const UploadView: React.FC<{ onBack: () => void; onSubmit: (file: File, info: PatientInfo, report?: File) => void; isLoading: boolean; error: string | null }> = ({ onBack, onSubmit, isLoading, error }) => {
+  const [dragActive, setDragActive] = useState<string | null>(null);
+  const [selectedScan, setSelectedScan] = useState<File | null>(null);
+  const [selectedReport, setSelectedReport] = useState<File | null>(null);
   
   const [patientInfo, setPatientInfo] = useState<PatientInfo>({
     name: "",
@@ -284,17 +286,28 @@ const UploadView: React.FC<{ onBack: () => void; onSubmit: (file: File, info: Pa
     optionalNotes: ""
   });
 
-  const handleDrag = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragActive(e.type === "dragenter" || e.type === "dragover"); };
-  const handleDrop = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragActive(false); if (e.dataTransfer.files?.[0]) setSelectedFile(e.dataTransfer.files[0]); };
+  const handleDrag = (e: React.DragEvent, type: string) => { e.preventDefault(); e.stopPropagation(); setDragActive(e.type === "dragenter" || e.type === "dragover" ? type : null); };
+  const handleDrop = (e: React.DragEvent, type: string) => { 
+    e.preventDefault(); 
+    e.stopPropagation(); 
+    setDragActive(null); 
+    if (e.dataTransfer.files?.[0]) {
+      if (type === 'scan') setSelectedScan(e.dataTransfer.files[0]);
+      if (type === 'report') setSelectedReport(e.dataTransfer.files[0]);
+    }
+  };
+
   const handleAnalyze = () => {
-    if (selectedFile) {
-      onSubmit(selectedFile, patientInfo);
+    if (selectedScan) {
+      onSubmit(selectedScan, patientInfo, selectedReport || undefined);
     }
   };
 
   const updateInfo = (key: keyof PatientInfo, value: any) => {
     setPatientInfo(prev => ({ ...prev, [key]: value }));
   };
+
+  const isButtonDisabled = !selectedScan || !patientInfo.name || (patientInfo.mode === 'Detailed' && !selectedReport);
 
   if (isLoading) {
     return (
@@ -479,26 +492,54 @@ const UploadView: React.FC<{ onBack: () => void; onSubmit: (file: File, info: Pa
         </div>
 
         <div className="space-y-8">
-          {/* File Upload Section */}
+          {/* File Upload Section - Scan */}
           <div 
-            onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center transition-all min-h-[300px] ${dragActive ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white shadow-sm'}`}
+            onDragEnter={(e) => handleDrag(e, 'scan')} onDragLeave={(e) => handleDrag(e, 'scan')} onDragOver={(e) => handleDrag(e, 'scan')} onDrop={(e) => handleDrop(e, 'scan')}
+            className={`border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center transition-all min-h-[220px] ${dragActive === 'scan' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white shadow-sm'}`}
           >
-            {selectedFile ? (
+            {selectedScan ? (
               <div className="text-center w-full">
-                <div className="bg-blue-100 p-4 rounded-full inline-block mb-4">
-                  <ClipboardDocumentCheckIcon className="h-8 w-8 text-blue-600" />
+                <div className="bg-blue-100 p-3 rounded-full inline-block mb-3">
+                  <ClipboardDocumentCheckIcon className="h-6 w-6 text-blue-600" />
                 </div>
-                <p className="text-sm font-bold text-slate-900 truncate mb-1 max-w-[200px] mx-auto">{selectedFile.name}</p>
-                <p className="text-[10px] text-slate-400 uppercase font-bold">{(selectedFile.size / (1024 * 1024)).toFixed(2)} MB</p>
-                <button onClick={() => setSelectedFile(null)} className="mt-6 text-xs text-red-500 font-bold hover:underline">Remove File</button>
+                <p className="text-xs font-bold text-slate-900 truncate mb-1 max-w-[200px] mx-auto">{selectedScan.name}</p>
+                <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">Medical Scan</p>
+                <button onClick={() => setSelectedScan(null)} className="mt-4 text-[10px] text-red-500 font-black uppercase tracking-tighter hover:underline">Remove Scan</button>
               </div>
             ) : (
               <>
-                <ArrowUpTrayIcon className="h-10 w-10 text-slate-300 mb-4" />
-                <p className="text-sm font-bold text-slate-900 mb-6 text-center">Drop scan file here</p>
-                <label className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-black uppercase tracking-widest py-3 px-6 rounded-xl cursor-pointer transition-all">
-                  Browse Files <input type="file" className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && setSelectedFile(e.target.files[0])} />
+                <ArrowUpTrayIcon className="h-8 w-8 text-slate-300 mb-3" />
+                <p className="text-xs font-bold text-slate-900 mb-4 text-center">Upload Medical Scan</p>
+                <label className="bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest py-2.5 px-5 rounded-xl cursor-pointer transition-all">
+                  Browse Scan <input type="file" className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && setSelectedScan(e.target.files[0])} />
+                </label>
+              </>
+            )}
+          </div>
+
+          {/* File Upload Section - Report (Mandatory in Detailed) */}
+          <div 
+            onDragEnter={(e) => handleDrag(e, 'report')} onDragLeave={(e) => handleDrag(e, 'report')} onDragOver={(e) => handleDrag(e, 'report')} onDrop={(e) => handleDrop(e, 'report')}
+            className={`border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center transition-all min-h-[220px] ${dragActive === 'report' ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white shadow-sm'} ${patientInfo.mode === 'Detailed' && !selectedReport ? 'border-amber-300' : ''}`}
+          >
+            {selectedReport ? (
+              <div className="text-center w-full">
+                <div className="bg-indigo-100 p-3 rounded-full inline-block mb-3">
+                  <InformationCircleIcon className="h-6 w-6 text-indigo-600" />
+                </div>
+                <p className="text-xs font-bold text-slate-900 truncate mb-1 max-w-[200px] mx-auto">{selectedReport.name}</p>
+                <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">Clinical Report</p>
+                <button onClick={() => setSelectedReport(null)} className="mt-4 text-[10px] text-red-500 font-black uppercase tracking-tighter hover:underline">Remove Report</button>
+              </div>
+            ) : (
+              <>
+                <DocumentMagnifyingGlassIcon className="h-8 w-8 text-slate-300 mb-3" />
+                <p className="text-xs font-bold text-slate-900 mb-1 text-center">Upload Clinical Report</p>
+                <p className={`text-[9px] font-black uppercase mb-4 ${patientInfo.mode === 'Detailed' ? 'text-amber-500' : 'text-slate-400'}`}>
+                  {patientInfo.mode === 'Detailed' ? 'Required for Detailed Mode' : 'Optional Extra Context'}
+                </p>
+                <label className="bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest py-2.5 px-5 rounded-xl cursor-pointer transition-all">
+                  Browse Report <input type="file" className="hidden" onChange={(e) => e.target.files?.[0] && setSelectedReport(e.target.files[0])} />
                 </label>
               </>
             )}
@@ -506,11 +547,11 @@ const UploadView: React.FC<{ onBack: () => void; onSubmit: (file: File, info: Pa
 
           <button 
             onClick={handleAnalyze} 
-            disabled={!selectedFile || !patientInfo.name}
+            disabled={isButtonDisabled}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black uppercase tracking-widest py-5 rounded-2xl shadow-xl shadow-blue-200/50 transition-all flex items-center justify-center space-x-2"
           >
             <DocumentMagnifyingGlassIcon className="h-5 w-5" />
-            <span>Generate Report</span>
+            <span>Generate Comparison Report</span>
           </button>
           
           <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-start space-x-3">
@@ -626,6 +667,12 @@ const ResultView: React.FC<{ report: MedicalReport; onBack: () => void }> = ({ r
               <span className="bg-slate-100 px-3 py-1 rounded-full">{p.age} Years</span>
               <span className="bg-slate-100 px-3 py-1 rounded-full">{p.gender}</span>
               <span className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full">{p.scanType}</span>
+              {report.reportFileName && (
+                <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full flex items-center">
+                  <ClipboardDocumentCheckIcon className="h-3 w-3 mr-1" />
+                  Report Linked
+                </span>
+              )}
             </div>
           </div>
           <div className="text-left md:text-right space-y-2">
