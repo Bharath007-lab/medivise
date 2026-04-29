@@ -305,7 +305,7 @@ const UploadView: React.FC<{ onBack: () => void; onSubmit: (file: File, info: Pa
         </div>
         <div className="text-center">
           <h2 className="text-2xl font-bold text-slate-900">Analyzing Medical Image...</h2>
-          <p className="text-slate-500 mt-2">Gemini AI 1.5 Flash is building a structured report.</p>
+          <p className="text-slate-500 mt-2">Gemini 3 Flash is building a structured report.</p>
           <div className="mt-4 flex items-center justify-center space-x-2 text-sm text-blue-600 font-medium">
             <span className="animate-pulse">●</span>
             <span className="animate-pulse" style={{ animationDelay: '0.2s' }}>●</span>

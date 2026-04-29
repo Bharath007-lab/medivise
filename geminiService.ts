@@ -194,25 +194,24 @@ CRITICAL SAFETY RULES:
 Now analyze the image and generate the report.
   `;
 
-  const contents = {
-    parts: [
-      {
-        inlineData: {
-          mimeType: file.type,
-          data: base64Data
-        }
-      },
-      {
-        text: analysisPrompt
+  const contents = [
+    {
+      inlineData: {
+        mimeType: file.type,
+        data: base64Data,
       }
-    ]
-  };
+    },
+    {
+      text: analysisPrompt
+    }
+  ];
 
-  const response = await ai.models.generateContent({
-    model: "gemini-1.5-flash", 
-    contents,
-    config: {
-      responseMimeType: "application/json",
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview", 
+      contents,
+      config: {
+        responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
@@ -284,11 +283,10 @@ Now analyze the image and generate the report.
     }
   });
 
-  const text = response.text || "{}";
-  try {
+    const text = response.text || "{}";
     return JSON.parse(text) as AnalysisResult;
-  } catch (e) {
-    console.error("Failed to parse Gemini response", e);
-    throw new Error("Analysis failed. Please ensure the file contains clear medical imaging data.");
+  } catch (e: any) {
+    console.error("Failed to parse or fetch Gemini response", e);
+    throw new Error(e.message || "Analysis failed. Please ensure the file contains clear medical imaging data.");
   }
 }
