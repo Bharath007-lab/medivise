@@ -1,7 +1,7 @@
 
 import { User, MedicalReport } from './types';
 
-const DB_NAME = 'MediviseDB';
+const DB_NAME = 'RadAssistDB';
 const STORE_NAME = 'reports';
 const DB_VERSION = 1;
 

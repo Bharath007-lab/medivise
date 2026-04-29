@@ -12,14 +12,14 @@ export async function analyzeMedicalFile(
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const analysisPrompt = `
-You are an advanced medical imaging assistant designed to generate structured, user-friendly medical reports from imaging scans.
+You are an advanced medical imaging assistant designed to generate structured reports, user-friendly summaries, and shareable outputs.
 
 The user will provide:
 1. A medical image (MRI / CT / X-ray)
 2. Patient details
-3. Selected scan type
-4. Selected mode (Quick or Detailed)
-5. Optional previous reports or clinical notes
+3. Scan type
+4. Mode (Quick / Detailed)
+5. Optional previous reports
 
 ----------------------------------------
 
@@ -33,10 +33,10 @@ PATIENT DETAILS:
 - Known Conditions: ${patientInfo.conditions}
 
 SCAN TYPE:
-${patientInfo.scanType}  (MRI / CT / X-ray)
+${patientInfo.scanType} (MRI / CT / X-ray)
 
 MODE:
-${patientInfo.mode}  (Quick / Detailed)
+${patientInfo.mode} (Quick / Detailed)
 
 OPTIONAL:
 Previous Report / Clinical Notes:
@@ -46,154 +46,55 @@ ${patientInfo.optionalNotes || "None provided"}
 
 TASK:
 
-Analyze the provided medical image carefully and generate a structured, easy-to-understand medical-style report.
+Analyze the provided medical image carefully and generate a structured response according to the following requirements.
 
 ----------------------------------------
 
-OUTPUT FORMAT (STRICT JSON ONLY):
-
-{
-  "patient_summary": "",
-  "scan_type": "",
-  "mode": "",
-  "image_quality": "",
-  "observations": [],
-  "anatomy_identified": [],
-  "suspected_regions": [
-    {
-      "location_description": "",
-      "issue_description": "",
-      "severity": "low / medium / high",
-      "visual_marker": {
-        "shape": "circle / rectangle",
-        "color": "green / yellow / red",
-        "meaning": ""
-      }
-    }
-  ],
-  "risk_level": "",
-  "confidence_score": "",
-  "comparison_to_general_normal": "",
-  "estimated_measurements": [
-    { "label": "", "value": "" }
-  ],
-  "readings": [
-    {
-      "metric": "",
-      "value": "",
-      "unit": "",
-      "status": "normal / abnormal / borderline"
-    }
-  ],
-  "final_summary": "",
-  "recommended_next_steps": [],
-  "explanations_for_user": [],
-  "important_note": ""
-}
-
-----------------------------------------
-
-DETAILED FIELD INSTRUCTIONS:
-
-1. patient_summary:
-   - Brief overview combining patient details and scan type
-
-2. image_quality:
-   - Mention clarity, blur, noise, resolution
-
-3. observations:
-   - Only visible facts (NO guessing)
-
-4. anatomy_identified:
-   - List visible anatomical structures
-
-5. suspected_regions:
-   For each region:
-   - Describe location clearly (e.g., "upper right lung", "central brain region")
-   - Describe visible issue (if any)
-   - Assign severity:
-       low / medium / high
-   - Define visual_marker:
-       shape: circle or rectangle
-       color: green / yellow / red
-       meaning: explanation of severity
-
-6. risk_level:
-   - Overall: Low / Medium / High
-
-7. confidence_score:
-   - Estimate confidence (0–100%)
-
-8. comparison_to_general_normal:
-   - Compare to general anatomical expectations
-   - DO NOT claim real dataset comparison
-
-9. estimated_measurements:
-   - Only include if visually inferable (approximate only)
-
-10. readings:
-    - Extract any clear metrics, measurements, or labs into a structured format
-    - Define metric, value, unit (if applicable), and clinical status (normal, abnormal, borderline)
-
-11. final_summary:
-   - Clear, concise conclusion (non-diagnostic)
-
-12. recommended_next_steps:
-   - Safe suggestions (e.g., further imaging, consultation)
-
-13. explanations_for_user:
-   - Explain findings in simple language
-
-14. important_note:
-   - MUST include:
-     "This is an AI-generated report and not a medical diagnosis."
-
-----------------------------------------
-
-MODE BEHAVIOR:
+MODE RULES:
 
 QUICK MODE:
-- Focus on:
-  - key observations
-  - severity
-  - short summary
-- Keep output concise
-- Skip deep explanations
+- Keep outputs concise
+- Focus on severity + summary
 
 DETAILED MODE:
-- Include:
-  - deeper explanations
-  - more structured breakdown
-  - comparison to general normal
-  - optional estimated measurements
-- If previous report is provided, consider it
+- Add explanations
+- Expand observations
+- Include more structured breakdown
+- Compare to general normal expectations
+- Use previous report if provided
 
 ----------------------------------------
 
 VISUAL MARKER RULES:
 
-- You CANNOT draw on the image
-- Instead, describe marker placement using text
-- Example:
-  "location_description": "upper left chest region"
-
-Frontend will use this to draw:
-- circles / rectangles
-- colors based on severity
+- DO NOT draw on image
+- Describe marker locations (e.g., "upper right chest")
+- Use severity colors:
+  Green = low
+  Yellow = medium
+  Red = high
 
 ----------------------------------------
 
-CRITICAL SAFETY RULES:
+SAFETY RULES:
 
-- DO NOT provide diagnosis
-- DO NOT claim certainty beyond visible evidence
-- If unsure, say "insufficient information"
-- DO NOT claim access to hospital or cloud medical datasets
-- Use general medical knowledge only
+- DO NOT give diagnosis
+- DO NOT claim access to hospital/cloud medical datasets
+- If uncertain, say "insufficient information"
+- Always include disclaimer: "This is an AI-generated report and not a medical diagnosis."
 
 ----------------------------------------
 
-Now analyze the image and generate the report.
+JSON STRUCTURE GUIDELINES (for Section 1):
+
+- observations: Only visible facts (NO guessing)
+- anatomy_identified: List visible anatomical structures
+- readings: Extract clear metrics, measurements, or labs
+- final_summary: Clear, concise conclusion (non-diagnostic)
+
+----------------------------------------
+
+Now analyze the image and populate the JSON response.
   `;
 
   const contents: any[] = [
@@ -281,13 +182,17 @@ Now analyze the image and generate the report.
           final_summary: { type: Type.STRING },
           recommended_next_steps: { type: Type.ARRAY, items: { type: Type.STRING } },
           explanations_for_user: { type: Type.ARRAY, items: { type: Type.STRING } },
-          important_note: { type: Type.STRING }
+          important_note: { type: Type.STRING },
+          human_readable_report: { type: Type.STRING },
+          email_share_format: { type: Type.STRING },
+          downloadable_report_text: { type: Type.STRING }
         },
         required: [
           "patient_summary", "scan_type", "mode", "image_quality", "observations", 
           "anatomy_identified", "suspected_regions", "risk_level", "confidence_score",
           "comparison_to_general_normal", "final_summary", "recommended_next_steps",
-          "explanations_for_user", "important_note", "readings"
+          "explanations_for_user", "important_note", "readings",
+          "human_readable_report", "email_share_format", "downloadable_report_text"
         ]
       }
     }

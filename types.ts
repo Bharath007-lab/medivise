@@ -57,6 +57,10 @@ export interface AnalysisResult {
   recommended_next_steps: string[];
   explanations_for_user: string[];
   important_note: string;
+  // New sections for RAD-ASSIST
+  human_readable_report?: string;
+  email_share_format?: string;
+  downloadable_report_text?: string;
 }
 
 export interface MedicalReport {
@@ -65,8 +69,10 @@ export interface MedicalReport {
   timestamp: number;
   fileName: string;
   fileType: string;
+  scanBase64?: string;
   reportFileName?: string;
   reportFileType?: string;
+  reportBase64?: string;
   patientInfo: PatientInfo;
   analysis: AnalysisResult;
 }

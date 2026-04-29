@@ -21,10 +21,15 @@ import {
   ShieldExclamationIcon,
   ShieldCheckIcon,
   BeakerIcon,
-  UserIcon
+  UserIcon,
+  DocumentTextIcon,
+  EnvelopeIcon,
+  ClipboardDocumentIcon,
+  PaperAirplaneIcon
 } from '@heroicons/react/24/outline';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import JSZip from 'jszip';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>(Page.LOGIN);
@@ -85,9 +90,9 @@ export default function App() {
       });
 
       const scanBase64 = await readFile(scanFile);
-      const reportBase64 = reportFile ? await readFile(reportFile) : undefined;
+      const reportBase64Content = reportFile ? await readFile(reportFile) : undefined;
 
-      const result = await analyzeMedicalFile(scanFile, scanBase64, patientInfo, reportFile, reportBase64);
+      const result = await analyzeMedicalFile(scanFile, scanBase64, patientInfo, reportFile, reportBase64Content);
       
       const newReport: MedicalReport = {
         id: Math.random().toString(36).substr(2, 9),
@@ -95,8 +100,10 @@ export default function App() {
         timestamp: Date.now(),
         fileName: scanFile.name,
         fileType: scanFile.type,
+        scanBase64: scanBase64,
         reportFileName: reportFile?.name,
         reportFileType: reportFile?.type,
+        reportBase64: reportBase64Content,
         patientInfo: patientInfo,
         analysis: result
       };
@@ -128,7 +135,7 @@ export default function App() {
           <div className="flex justify-between h-16 items-center">
             <div className="flex items-center space-x-2 cursor-pointer" onClick={() => setCurrentPage(Page.DASHBOARD)}>
               <ClipboardDocumentCheckIcon className="h-8 w-8 text-blue-600" />
-              <span className="text-xl font-bold text-slate-900 tracking-tight">Medivise <span className="text-blue-600">AI</span></span>
+              <span className="text-xl font-bold text-slate-900 tracking-tight">RAD-ASSIST <span className="text-blue-600">PRO</span></span>
             </div>
             <div className="flex items-center space-x-4">
               <span className="hidden sm:block text-sm text-slate-500 font-medium">Hello, {currentUser}</span>
@@ -193,8 +200,8 @@ const LoginPage: React.FC<{ onLogin: (u: string, p: string) => void; error: stri
           <div className="inline-flex items-center justify-center p-3 bg-blue-100 rounded-xl mb-4">
             <ClipboardDocumentCheckIcon className="h-10 w-10 text-blue-600" />
           </div>
-          <h1 className="text-3xl font-bold text-slate-900">Medivise AI</h1>
-          <p className="text-slate-500 mt-2">Private Medical Analysis Platform</p>
+          <h1 className="text-3xl font-bold text-slate-900">RAD-ASSIST</h1>
+          <p className="text-slate-500 mt-2">Professional Imaging Analysis</p>
         </div>
         {error && (
           <div className="mb-6 p-4 bg-red-50 text-red-700 text-sm rounded-lg flex items-start space-x-2">
@@ -605,7 +612,73 @@ const ResultView: React.FC<{ report: MedicalReport; onBack: () => void }> = ({ r
   const a = report.analysis;
   const p = report.patientInfo;
   const [isExporting, setIsExporting] = useState(false);
+  const [isPackaging, setIsPackaging] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<'visual' | 'human' | 'email' | 'pdf'>('visual');
+  const [patientEmail, setPatientEmail] = useState('');
+
+  const handleSendEmail = () => {
+    if (!patientEmail) {
+      alert("Please enter a patient email address.");
+      return;
+    }
+    const subject = encodeURIComponent(`Medical Diagnostic Package: ${p.name} - ${p.scanType}`);
+    const body = encodeURIComponent(`Dear ${p.name},\n\nPlease find attached the medical diagnostic package prepared for you. It includes the AI analysis report, original scans, and clinical summaries.\n\nSummary:\n${a.final_summary}\n\nDisclaimer: This is an AI-generated report and not a medical diagnosis.`);
+    window.location.href = `mailto:${patientEmail}?subject=${subject}&body=${body}`;
+  };
+
+  const handlePreparePackage = async () => {
+    if (!reportRef.current) return;
+    setIsPackaging(true);
+    try {
+      const zip = new JSZip();
+      const bundleName = `Medical_Package_${p.name.replace(/[^a-z0-9]/gi, '_')}`;
+
+      // 1. Generate PDF Report
+      const element = reportRef.current;
+      const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      const pdfBlob = pdf.output('blob');
+      zip.file(`${bundleName}_Report.pdf`, pdfBlob);
+
+      // 2. Add Original Scan if available
+      if (report.scanBase64) {
+        zip.file(report.fileName, report.scanBase64, { base64: true });
+      }
+
+      // 3. Add Original Clinical Report if available
+      if (report.reportBase64 && report.reportFileName) {
+        zip.file(`Original_${report.reportFileName}`, report.reportBase64, { base64: true });
+      }
+
+      // 4. Add Human Readable Text
+      if (a.downloadable_report_text) {
+        zip.file(`${bundleName}_Summary.txt`, a.downloadable_report_text);
+      }
+
+      // 5. Generate and download ZIP
+      const content = await zip.generateAsync({ type: 'blob' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(content);
+      link.download = `${bundleName}.zip`;
+      link.click();
+
+      // 6. Notify user to attach
+      alert("Diagnostic package created and downloaded! Your email client will now open. Please attach the ZIP file to the message.");
+      
+      // 7. Open Email Client
+      handleSendEmail();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to prepare diagnostic package. Please try individual downloads.");
+    } finally {
+      setIsPackaging(false);
+    }
+  };
 
   const handleDownloadPDF = async () => {
     if (!reportRef.current) return;
@@ -618,7 +691,7 @@ const ResultView: React.FC<{ report: MedicalReport; onBack: () => void }> = ({ r
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Medivise_Report_${p.name.replace(/[^a-z0-9]/gi, '_')}.pdf`);
+      pdf.save(`RAD_ASSIST_Report_${p.name.replace(/[^a-z0-9]/gi, '_')}.pdf`);
     } catch (err) { alert("PDF generation failed."); } finally { setIsExporting(false); }
   };
 
@@ -647,20 +720,48 @@ const ResultView: React.FC<{ report: MedicalReport; onBack: () => void }> = ({ r
           </button>
           <h2 className="text-3xl font-black text-slate-900 tracking-tight">AI Master Report</h2>
         </div>
-        <div className="flex space-x-3">
-          <button onClick={handleDownloadPDF} disabled={isExporting} className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center space-x-2 shadow-lg disabled:opacity-50">
-            {isExporting ? <span className="animate-pulse">Exporting...</span> : <><ArrowDownTrayIcon className="h-5 w-5" /><span>Download PDF</span></>}
+        <div className="flex space-x-2">
+          <div className="bg-white p-1 rounded-xl border border-slate-200 shadow-sm flex no-print">
+            <button 
+              onClick={() => setActiveTab('visual')}
+              className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'visual' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              Visual
+            </button>
+            <button 
+              onClick={() => setActiveTab('human')}
+              className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'human' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              Report
+            </button>
+            <button 
+              onClick={() => setActiveTab('email')}
+              className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'email' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              Email
+            </button>
+            <button 
+              onClick={() => setActiveTab('pdf')}
+              className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'pdf' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              Raw
+            </button>
+          </div>
+          <button onClick={handleDownloadPDF} disabled={isExporting} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center space-x-2 shadow-lg disabled:opacity-50">
+            {isExporting ? <span className="animate-pulse">Exporting...</span> : <><ArrowDownTrayIcon className="h-5 w-5" /><span>PDF</span></>}
           </button>
         </div>
       </div>
 
       <div ref={reportRef} className="space-y-6 pt-4 bg-white p-6 sm:p-10 rounded-3xl shadow-xl border border-slate-200">
-        {/* Header Header */}
+        {activeTab === 'visual' && (
+          <>
+            {/* Header Header */}
         <div className="flex flex-col md:flex-row justify-between items-start border-b border-slate-100 pb-8 gap-6">
           <div className="space-y-1">
             <div className="flex items-center space-x-2 text-blue-600 mb-2">
               <ClipboardDocumentCheckIcon className="h-6 w-6" />
-              <span className="text-lg font-black tracking-tighter uppercase">Medivise AI Analysis</span>
+              <span className="text-lg font-black tracking-tighter uppercase">RAD-ASSIST Analysis</span>
             </div>
             <h1 className="text-4xl font-black text-slate-900 tracking-tight uppercase leading-none">{p.name || "N/A"}</h1>
             <div className="flex flex-wrap items-center gap-4 text-slate-500 font-bold text-xs uppercase tracking-widest mt-4">
@@ -878,7 +979,83 @@ const ResultView: React.FC<{ report: MedicalReport; onBack: () => void }> = ({ r
             </div>
           </div>
         </div>
+      </>
+    )}
+
+    {activeTab === 'human' && (
+      <div className="space-y-8 animate-fadeIn">
+        <div className="flex items-center space-x-2 text-blue-600 border-b border-slate-100 pb-4">
+          <DocumentTextIcon className="h-6 w-6" />
+          <h2 className="text-xl font-black uppercase tracking-tight">Clinical Report Narrative</h2>
+        </div>
+        <div className="prose prose-slate max-w-none">
+          <div className="whitespace-pre-wrap text-slate-800 leading-relaxed font-medium bg-slate-50 p-8 rounded-3xl border border-slate-100">
+            {a.human_readable_report || "Report narrative not generated. Try a Detailed scan."}
+          </div>
+        </div>
       </div>
-    </div>
+    )}
+
+    {activeTab === 'email' && (
+      <div className="space-y-8 animate-fadeIn">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-4">
+          <div className="flex items-center space-x-2 text-indigo-600">
+            <EnvelopeIcon className="h-6 w-6" />
+            <h2 className="text-xl font-black uppercase tracking-tight">Send or Copy Summary</h2>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center w-full sm:w-auto">
+            <input 
+              type="email" 
+              placeholder="Patient's Email (e.g. name@example.com)"
+              value={patientEmail}
+              onChange={(e) => setPatientEmail(e.target.value)}
+              className="px-4 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-full sm:w-64"
+            />
+            <button 
+              onClick={handlePreparePackage}
+              disabled={isPackaging}
+              className={`bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center space-x-2 shadow-lg shadow-indigo-100 transition-all whitespace-nowrap ${isPackaging ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <PaperAirplaneIcon className={`h-4 w-4 ${isPackaging ? 'animate-bounce' : ''}`} />
+              <span>{isPackaging ? 'Preparing...' : 'Prepare & Send Package'}</span>
+            </button>
+          </div>
+        </div>
+        <div className="bg-slate-50 p-4 rounded-2xl border border-blue-100 text-[10px] text-blue-800 leading-tight">
+          <strong>Note:</strong> Browsers cannot automatically attach files to emails for security. Clicking the button will download a <strong>Diagnostic ZIP package</strong> (Scan + Report) and open your email app. Simply attach the downloaded ZIP to the message.
+        </div>
+        <div className="bg-slate-900 rounded-3xl p-8 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4">
+            <button 
+              onClick={() => {
+                navigator.clipboard.writeText(a.email_share_format || "");
+                alert("Email copied to clipboard!");
+              }}
+              className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-colors text-white/50 hover:text-white flex items-center space-x-2 text-[10px] font-black uppercase tracking-widest"
+            >
+              <ClipboardDocumentIcon className="h-4 w-4" />
+              <span>Copy</span>
+            </button>
+          </div>
+          <div className="whitespace-pre-wrap text-white/90 font-mono text-sm leading-relaxed max-h-[500px] overflow-y-auto pr-4 scrollbar-thin scrollbar-thumb-white/10">
+            {a.email_share_format || "Email format not available."}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {activeTab === 'pdf' && (
+      <div className="space-y-8 animate-fadeIn">
+        <div className="flex items-center space-x-2 text-slate-600 border-b border-slate-100 pb-4">
+          <DocumentMagnifyingGlassIcon className="h-6 w-6" />
+          <h2 className="text-xl font-black uppercase tracking-tight">Raw Report Text</h2>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-3xl p-8 font-mono text-xs text-slate-600 whitespace-pre-wrap leading-relaxed shadow-inner">
+          {a.downloadable_report_text || "Raw data unavailable."}
+        </div>
+      </div>
+    )}
+  </div>
+</div>
   );
 };

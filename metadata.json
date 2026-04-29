@@ -1,6 +1,6 @@
 {
-  "name": "Medivise AI",
-  "description": "A stateless, privacy-first AI medical analysis application that stores all reports locally on your device. Analyze X-rays, MRIs, and medical documents using Gemini 3 Flash.",
+  "name": "RAD-ASSIST",
+  "description": "An advanced medical imaging assistant for structured reports, user-friendly summaries, and shareable diagnostic outputs.",
   "requestFramePermissions": [
     "camera"
   ],
